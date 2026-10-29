@@ -103,7 +103,7 @@
             </div>
         </section>
 
-        <!-- EJERCICIO 2 (CRISIS ENERGÉTICA) -->
+        <!-- EJERCICIO 2 (CRISIS ENERGÉTICA + DATA SCIENCE) -->
         <section id="ejercicio2" class="card">
             <h2>Ejercicio 2: Crisis Energética (Panel Solar)</h2>
             <div class="problem-context">
@@ -120,6 +120,13 @@
                 <label>Potencia Máxima \(P_{max}\) (kW): <input type="number" id="e2-pmax" value="5.0" step="any" required></label>
                 <label>Hora inicio \(t_0\): <input type="number" id="e2-t0" value="0" step="any" required></label>
                 <label>Hora fin \(t_1\): <input type="number" id="e2-t1" value="12" step="any" required></label>
+                
+                <!-- NUEVO CHECKBOX PARA IA / DATA SCIENCE -->
+                <label style="flex-direction: row; align-items: center; gap: 10px; grid-column: 1 / -1; margin-top: 10px; cursor: pointer; color: #0d6efd;">
+                    <input type="checkbox" id="e2-ruido" style="width: auto; margin: 0;">
+                    <strong>Simular ruido de sensores (Data Science / IA)</strong>
+                </label>
+
                 <button type="submit">Calcular con Romberg</button>
             </form>
 
@@ -147,8 +154,7 @@
                 type: "tabular",
                 x: [0, 1, 2, 3, 4, 5, 6, 7],
                 y: [0, 14, 39, 69, 95, 114, 129, 139],
-                // La integral original da mi/h*s, dividimos por 3600 para millas
-                factor: 1 / 3600,
+                factor: 1 / 3600, // de mi/h*s a millas
                 defaultInputs: { a: 0, b: 7 }
             },
             20: {
@@ -216,7 +222,6 @@
                 type: "tabular",
                 x: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
                 y: [0, 2.6, 3.2, 4.8, 5.6, 6.0, 6.2, 6.0, 5.6, 4.8, 3.3, 2.6, 0],
-                // Para volumen, la integral es pi * r^2. Como y es el diámetro, r = y/2.
                 integrandTransform: (y_val) => Math.PI * Math.pow(y_val / 2, 2),
                 factor: 1,
                 defaultInputs: { a: 0, b: 12 }
@@ -320,12 +325,10 @@
 
             if (b <= a) return showError('e1-error-box', 'El límite superior debe ser mayor que el inferior.');
 
-            // Definir la función a integrar
             let f_integrand;
             if (ej.type === "func") {
                 f_integrand = ej.f;
             } else {
-                // Interpolación para tabulados
                 f_integrand = (x) => {
                     let y_val = interpolate(x, ej.x, ej.y);
                     if (ej.integrandTransform) return ej.integrandTransform(y_val);
@@ -333,14 +336,11 @@
                 };
             }
 
-            // Calcular con Romberg
             const { table, error, result } = romberg(f_integrand, a, b);
             
-            // Aplicar factor de conversión si existe (Ej: millas/h a millas)
             const finalResult = result * (ej.factor || 1);
             const finalError = error * (ej.factor || 1);
 
-            // Mostrar resultados
             document.getElementById('res1').classList.remove('hidden');
             document.getElementById('e1-res').innerText = finalResult.toFixed(6);
             document.getElementById('e1-unit').innerText = ej.unit;
@@ -348,7 +348,6 @@
 
             renderTable('e1-table', table);
 
-            // Gráfica
             let xVals = [], yVals = [];
             for (let i = 0; i <= 100; i++) {
                 let x = a + (b - a) * (i / 100);
@@ -367,18 +366,31 @@
             });
         });
 
-        // Ejercicio 2 (Crisis Energética)
+        // Ejercicio 2 (Crisis Energética + Data Science)
         document.getElementById('form2').addEventListener('submit', (e) => {
             e.preventDefault();
             hideError('e2-error-box');
             const pmax = parseFloat(document.getElementById('e2-pmax').value);
             const t0 = parseFloat(document.getElementById('e2-t0').value);
             const t1 = parseFloat(document.getElementById('e2-t1').value);
+            const usarRuido = document.getElementById('e2-ruido').checked; // NUEVO: Verificar si se activó la simulación
 
             if (pmax <= 0) return showError('e2-error-box', 'La potencia máxima debe ser positiva.');
             if (t1 <= t0) return showError('e2-error-box', 'El tiempo final debe ser mayor que el inicial.');
 
-            const f = (t) => pmax * Math.sin(Math.PI * t / 12);
+            // Función ideal (matemática pura)
+            const f_ideal = (t) => pmax * Math.sin(Math.PI * t / 12);
+            
+            // Función con ruido (simula datos de sensores reales / Data Science)
+            const f_ruido = (t) => {
+                let valorIdeal = f_ideal(t);
+                // Generamos un ruido aleatorio de +/- 10%
+                let ruido = (Math.random() - 0.5) * (valorIdeal * 0.2); 
+                return Math.max(0, valorIdeal + ruido); // Aseguramos que no sea negativo
+            };
+
+            // Seleccionamos la función a integrar
+            const f = usarRuido ? f_ruido : f_ideal;
 
             const { table, error, result } = romberg(f, t0, t1);
 
@@ -388,18 +400,20 @@
 
             renderTable('e2-table', table);
 
+            // Para la gráfica, si hay ruido, dibujamos muchos puntos para que se vea el "temblor"
             let tVals = [], pVals = [];
-            for (let i = 0; i <= 100; i++) {
-                let t = t0 + (t1 - t0) * (i / 100);
+            const pasos = usarRuido ? 200 : 100; 
+            for (let i = 0; i <= pasos; i++) {
+                let t = t0 + (t1 - t0) * (i / pasos);
                 tVals.push(t);
                 pVals.push(f(t));
             }
 
             Plotly.newPlot('e2-plot', [{
                 x: tVals, y: pVals, type: 'scatter', fill: 'tozeroy', name: 'P(t)',
-                line: { color: '#ffc107' }
+                line: { color: usarRuido ? '#dc3545' : '#ffc107' } // Rojo si hay ruido, amarillo si es ideal
             }], {
-                title: 'Curva de Potencia Generada por el Panel Solar',
+                title: usarRuido ? 'Curva de Potencia (Simulación de Datos Reales con Ruido)' : 'Curva de Potencia Generada (Modelo Ideal)',
                 xaxis: { title: 'Tiempo (horas)' },
                 yaxis: { title: 'Potencia (kW)' },
                 margin: { t: 40, b: 40, l: 50, r: 20 }
